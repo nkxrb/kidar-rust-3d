@@ -1,0 +1,13 @@
+[package]
+name = "kidar-rust-3d"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+winit = "^0.30.0"
+wgpu = "^23.0.1"          # GPU 渲染 API
+nalgebra = "^0.32"      # 数学库（矩阵和向量）
+pollster = "0.4.0"
+bytemuck = "1.21.0"

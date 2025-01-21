@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use nalgebra::Vector3;
 use util::{BufferInitDescriptor, DeviceExt};
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
 use wgpu::*;
 
-use crate::render::vertex::*;
+use crate::render::{camera::Camera, pipeline::create_pipeline, vertex::*};
 
 pub struct WgpuCtx<'window> {
   vw: u32, // 屏幕高度
@@ -17,6 +18,9 @@ pub struct WgpuCtx<'window> {
   render_pipeline: RenderPipeline,
   vertex_buffer: Buffer,
   vertex_index_buffer: Buffer,
+  vertex_uniform_buffer: Buffer,
+  bind_group: BindGroup,
+  camera: Camera,
 }
 
 impl<'window> WgpuCtx<'window> {
@@ -35,7 +39,7 @@ impl<'window> WgpuCtx<'window> {
       force_fallback_adapter: false,
     }).await.expect("Failed to find an appropriate adapter");
 
-    // 获取逻辑设备、命令队列
+    // 获取GPU的逻辑设备、命令队列
     let (device, queue) = adapter.request_device(&DeviceDescriptor {
       label: None,
       required_features: wgpu::Features::empty(),
@@ -52,10 +56,26 @@ impl<'window> WgpuCtx<'window> {
     // 将表面配置对象应用到表面
     surface.configure(&device, &surface_config);
 
+    // 创建 Bind Group Layout
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+        label: Some("Uniform Bind Group Layout"),
+    });
+
     // 创建渲染管线
-    let render_pipeline = create_pipeline(&device, surface_config.format);
+    let render_pipeline = create_pipeline(&device, surface_config.format, &bind_group_layout);
     // 创建顶点缓存器
-    // let vertex_buffer = create_vertex_buffer(&device, &VERTEX_LIST);
     let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
       label: None,
       contents: bytemuck::cast_slice(&VERTEX_LIST),
@@ -65,8 +85,27 @@ impl<'window> WgpuCtx<'window> {
     let vertex_index_buffer = device.create_buffer_init(&BufferInitDescriptor {
       label: None,
       contents: bytemuck::cast_slice(&VERTEX_INDEX_LIST),
-      usage: BufferUsages::INDEX
+      usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
     });
+
+    // 创建相机
+    let camera = Camera::new(
+      Vector3::new(0.0, 0.0, 5.0),
+      Vector3::new(0.0, 0.0, 0.0),
+      Vector3::new(0.0, 1.0, 0.0),
+      180.0,
+      surface_config.width as f32 / surface_config.height as f32,
+      0.0,
+      100.0,
+    );
+    println!("camera: {:?}", camera.uniform_obj());
+    let vertex_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+      label: Some("uniform_buffer"),
+      contents: bytemuck::cast_slice(&[camera.uniform_obj()]),
+      usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+    });
+
+    let bind_group = camera.bind_group(&device, &bind_group_layout, &vertex_uniform_buffer);
 
     return WgpuCtx {
         vw: width,
@@ -78,20 +117,27 @@ impl<'window> WgpuCtx<'window> {
         adapter: adapter,
         render_pipeline,
         vertex_buffer,
-        vertex_index_buffer
+        vertex_index_buffer,
+        vertex_uniform_buffer,
+        bind_group,
+        camera
       };
   }
 
   pub fn new (window: Arc<Window>) -> Self {
     pollster::block_on(Self::new_async(window))
   }
+}
 
+impl<'window> WgpuCtx<'window> {
   pub fn draw(&mut self) {
-    // 画图
     let frame = self.surface.get_current_texture().unwrap();
+    // 设置纹理
     let view = frame.texture.create_view(&TextureViewDescriptor::default());
     // println!("WgpuCtx::draw: {:?}", view);
     let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
+
+    // 此处使用作用域，将pass限制在一定范围内，出作用域后会自动调用drop清理资源。
     {
       let mut r_pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: None,
@@ -102,87 +148,34 @@ impl<'window> WgpuCtx<'window> {
           view: &view,
           resolve_target: None,
           ops: Operations {
-            load: LoadOp::Clear(Color {
-              r: 0.1,
-              g: 0.2,
-              b: 0.3,
-              a: 1.0,
-            }),
+            load: LoadOp::Clear(Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
             store: StoreOp::Store,
           },
         })]
       });
       r_pass.set_pipeline(&self.render_pipeline);
+      r_pass.set_bind_group(0, &self.bind_group, &[]);
       r_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
       r_pass.set_index_buffer(self.vertex_index_buffer.slice(..), IndexFormat::Uint16);
       r_pass.draw_indexed(0..VERTEX_INDEX_LIST.len() as u32, 0, 0..1);
-      r_pass.draw(0..VERTEX_LIST.len() as u32, 0..1);
+      // r_pass.draw(0..VERTEX_LIST.len() as u32, 0..1);
     }
-    self.queue.submit(Some(encoder.finish()));
-    frame.present();
+
+    // 上面的pass结束后，才能调用finish
+    self.queue.submit(Some(encoder.finish())); // 提交命令到GPU
+    frame.present(); // 替换当前帧画面，显示最新的图像
   }
 
+  pub fn update_gpu_buffer(&mut self, mouse_pos: (f64, f64)) {
+    // 小数据更新，直接更新的是GPU内部的buffer
+    self.queue.write_buffer(&self.vertex_index_buffer, 0, bytemuck::cast_slice(&VERTEX_INDEX_LIST2));
+    self.draw();
+  } 
+
+  pub fn update_uniform_buffer(&mut self, size: PhysicalSize<u32>) {
+    // 根据窗口大小，更新projection矩阵
+    // let projection = create_projection(self.vw, self.vh);
+  }
 }
-
-fn create_pipeline(device: &Device, textureFormat: TextureFormat) -> RenderPipeline {
-  let shader = device.create_shader_module(ShaderModuleDescriptor {
-    label: Some("Shader"),
-    source: ShaderSource::Wgsl(include_str!("../template/shader.wgsl").into()),
-  });
-
-  let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-    label: Some("Render Pipeline Layout"),
-    bind_group_layouts: &[],
-    push_constant_ranges: &[],
-  });
-
-  device.create_render_pipeline(&RenderPipelineDescriptor {
-    label: Some("Render Pipeline"),
-    layout: Some(&render_pipeline_layout),
-    vertex: VertexState {
-      module: &shader,
-      entry_point: Some("vs_main"),
-      buffers: &[
-        create_vertex_buffer_layout()
-      ],
-      compilation_options: Default::default(),
-    },
-    fragment: Some(FragmentState {
-      module: &shader,
-      entry_point: Some("fs_main"),
-      targets: &[Some(textureFormat.into())],
-      compilation_options: Default::default(),
-    }),
-    primitive: PrimitiveState {
-      topology: PrimitiveTopology::TriangleList,
-      strip_index_format: None,
-      front_face: FrontFace::Ccw,
-      cull_mode: None,
-      unclipped_depth: false,
-      polygon_mode: PolygonMode::Fill,
-      conservative: false,
-    },
-    depth_stencil: None,
-    multisample: MultisampleState {
-      count: 1,
-      mask: !0,
-      alpha_to_coverage_enabled: false,
-    },
-    multiview: None,
-    cache: None,
-  })
-}
-
-fn create_vertex_buffer(device: &Device, vertices: &[Vertex]) -> Buffer {
-  let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-    label: Some("Vertex Buffer"),
-    contents: bytemuck::cast_slice(vertices),
-    usage: BufferUsages::VERTEX,
-  });
-  return vertex_buffer;
-  // queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(vertices));
-}
-
-
 
 

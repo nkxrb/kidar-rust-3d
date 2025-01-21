@@ -8,9 +8,19 @@ struct VertexOutput{
     @location(0) color: vec3f,
 }
 
+struct UniformBufferObject {
+    proj: mat4x4<f32>,
+    view: mat4x4<f32>,
+}
+
+@group(0) @binding(0) 
+var<uniform> ubo: UniformBufferObject;
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
+    // 将位置信息从裁剪空间转换到屏幕空间
+    //  * ubo.view
     out.pos = vec4<f32>(in.position, 1.0);
     out.color = in.color;
     return out;

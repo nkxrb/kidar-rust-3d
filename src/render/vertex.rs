@@ -44,6 +44,12 @@ pub const VERTEX_INDEX_LIST: &[u16] = &[
   0, 2, 4
 ];
 
+pub const VERTEX_INDEX_LIST2: &[u16] = &[
+  0, 1, 2,
+  2, 3, 4,
+  0,0,0,0,0,0
+];
+
 pub fn create_vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
   wgpu::VertexBufferLayout {
     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,

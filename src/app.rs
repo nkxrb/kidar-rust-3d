@@ -6,7 +6,6 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 use winit::window::Window;
-
 use crate::render::wgpu_ctx::*; 
 
 // 添加 Default 以便App::default()来快速创建App实例
@@ -31,16 +30,16 @@ impl<'window> ApplicationHandler for App<'window> {
       }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
       match event {
-        WindowEvent::Resized(new_size ) => {
-          // TODO: 处理窗口大小变化
+        WindowEvent::Resized(_new_size ) => {
+          // 处理窗口大小变化
           if let Some(window) = self.window.as_ref() {
             window.request_redraw(); // 请求重绘
           }
         },
         WindowEvent::RedrawRequested => {
-          // TODO: 处理窗口重绘
+          // 处理窗口重绘
           if let Some(wgpu_ctx) = self.wgpu_ctx.as_mut() {
             let size = self.window.as_ref().unwrap().inner_size();
             wgpu_ctx.draw();
@@ -54,8 +53,9 @@ impl<'window> ApplicationHandler for App<'window> {
           // TODO: 处理鼠标点击
           if state == winit::event::ElementState::Pressed && button == winit::event::MouseButton::Left {
             println!("Mouse input {:#?}", self.mouse_pos);
-            // self.wgpu_ctx.as_ref().unwrap().queue.write_buffer(&self.wgpu_ctx.as_ref().unwrap().vertex_buffer, 0, bytemuck::cast_slice(&[self.mouse_pos]));
-            // queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&new_vertices));
+            if let Some(wgpu_ctx) = self.wgpu_ctx.as_mut() {
+              wgpu_ctx.update_gpu_buffer(self.mouse_pos);
+            } 
           }
         },
         WindowEvent::CursorLeft { device_id } => {

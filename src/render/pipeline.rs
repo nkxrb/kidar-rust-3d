@@ -36,7 +36,7 @@ pub fn create_pipeline(device: &Device, texture_format: TextureFormat, bind_grou
       front_face: FrontFace::Ccw,
       cull_mode: None,
       unclipped_depth: false,
-      polygon_mode: PolygonMode::Fill,
+      polygon_mode: PolygonMode::Fill, // 设置为线框模式， 片源着色器绘制类型
       conservative: false,
     },
     depth_stencil: None,

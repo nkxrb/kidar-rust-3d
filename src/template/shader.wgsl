@@ -16,12 +16,14 @@ struct UniformBufferObject {
 @group(0) @binding(0) 
 var<uniform> ubo: UniformBufferObject;
 
+
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     // 将位置信息从裁剪空间转换到屏幕空间
     //  * ubo.view
-    out.pos = vec4<f32>(in.position, 1.0);
+    let pos = ubo.view * ubo.proj * vec4<f32>(in.position, 1.0);
+    out.pos = vec4<f32>(pos.xyz/pos.w, 1.0);
     out.color = in.color;
     return out;
 }

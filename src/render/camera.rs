@@ -15,7 +15,7 @@ pub struct Camera {
   position: Vector3<f32>, // 相机位置
   target: Vector3<f32>, // 相机目标
   up: Vector3<f32>, // 相机上方向
-  fov: f32, // 视场角
+  fov: f32, // 视场角，横向广角
   aspect: f32, // 宽高比
   near: f32, // 近裁剪面
   far: f32, // 远裁剪面
@@ -34,30 +34,91 @@ impl Camera {
     }
   }
 
-  pub fn view_matrix(&self) -> Matrix4<f32> {
-    Matrix4::look_at_rh(&Point3::from(self.position), &Point3::from(self.target), &self.up)
+  
+  pub fn model_matrix(&self) -> Matrix4<f32> {
+    // 通过相机位置，将世界坐标通过模型矩阵转化为局部坐标
+    Matrix4::identity()
+
   }
 
+  // 通过相机获取视图矩阵
+  pub fn view_matrix(&self) -> Matrix4<f32> {
+    Matrix4::look_at_rh(&Point3::from(self.position), &Point3::from(self.target), &self.up)
+    // 手动实现一下view矩阵的推导
+    // 第一步，将相机移动到原点（0,0,0）
+    // let t_view = Matrix4::new(
+    //   1.0, 0.0, 0.0, -self.position.x,
+    //   0.0, 1.0, 0.0, -self.position.y,
+    //   0.0, 0.0, 1.0, -self.position.z,
+    //   0.0, 0.0, 0.0, 1.0,
+    // );
+    // // 第二步，将相机的目标方向转换为相机的朝向
+    // let z_axis = (self.target - self.position).normalize();
+    // let x_axis = self.up.cross(&z_axis).normalize();
+    // let y_axis = z_axis.cross(&x_axis);
+    // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
+    // let t_rotate = Matrix4::new(
+    //   x_axis.x, x_axis.y, x_axis.z, 0.0,
+    //   y_axis.x, y_axis.y, y_axis.z, 0.0,
+    //   z_axis.x, z_axis.y, z_axis.z, 0.0,
+    //   0.0, 0.0, 0.0, 1.0,
+    // );
+    // // 第三步，将相机的朝向转换为世界坐标
+    // let t_view = t_rotate * t_view;
+    // t_view
+  }
+
+  // 通过相机获取投影矩阵
   pub fn projection_matrix(&self) -> Matrix4<f32> {
-    let f = 1.0 / (self.fov * 0.5).tan();
-    let aspect = self.aspect;
-    let z_range = self.far - self.near;
-    let z_scale = self.far / (self.far - self.near);
-    let z_offset = -(self.far * self.near) / z_range;
-    let projection = Matrix4::new(
-      f / aspect, 0.0, 0.0, 0.0,
-      0.0, f, 0.0, 0.0,
-      0.0, 0.0, z_scale, -1.0,
-      0.0, 0.0, z_offset, 0.0,
-    );
-    projection
+    // 手动实现透视投影的矩阵推导
+    // 计算视锥体的宽度(因为坐标都是原点0为中心，左右对称的数据，因此这里只需要计算一半的宽度)
+    // let width = (self.fov * 0.5).tan() * self.near;
+    // println!("Camera::projection_matrix: width: {}", (self.fov * 0.5).tan());
+    // // 计算视锥体的高度
+    // let height = width / self.aspect;
+
+    // // 计算视锥体的投影矩阵
+    // let projection = Matrix4::new(
+    //   1.0 / width, 0.0, 0.0, 0.0,
+    //   0.0, 1.0 / height, 0.0, 0.0,
+    //   0.0, 0.0, -self.far / (self.far - self.near), -1.0,
+    //   0.0, 0.0, -(self.far * self.near) / (self.far - self.near), 0.0,
+    // );
+    // projection
+
+    // let f = 1.0 / (self.fov * 0.5).tan();
+    // let aspect = self.aspect;
+    // let z_range = self.far - self.near;
+    // let z_scale = 1.0 / (self.far - self.near);
+    // let z_offset = -(self.far * self.near) / z_range;
+    // let projection = Matrix4::new(
+    //   f / aspect, 0.0, 0.0, 0.0,
+    //   0.0, f, 0.0, 0.0,
+    //   0.0, 0.0, z_scale, -1.0,
+    //   0.0, 0.0, z_offset, 0.0,
+    // );
+    // projection
+    Matrix4::new_perspective(self.aspect, self.fov, self.near, self.far)
+    // Projective3::new()
   } 
 
   pub fn uniform_obj(&self) -> CameraUniform  {
-    CameraUniform {
+    let camera_uniform = CameraUniform {
       proj: self.projection_matrix(),
       view: self.view_matrix(),
-    }
+      // proj: [
+      //   [1.0, 0.0, 0.0, 0.0],
+      //   [0.0, 1.0, 0.0, 0.0],
+      //   [0.0, 0.0, 1.0, 0.0],
+      //   [0.0, 0.0, 0.0, 1.0]].into(),
+      // view: [
+      //   [1.0, 0.0, 0.0, 0.0],
+      //   [0.0, 1.0, 0.0, 0.0],
+      //   [0.0, 0.0, 1.0, 0.0],
+      //   [0.0, 0.0, 0.0, 1.0]].into(),
+    };
+    println!("Camera::uniform_obj: {:?}", &camera_uniform);
+    camera_uniform
   }
 
   pub fn bind_group(&self, device: &Device, bind_group_layout: &BindGroupLayout, uniform_buffer: &Buffer) -> BindGroup {

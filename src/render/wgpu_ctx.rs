@@ -42,7 +42,7 @@ impl<'window> WgpuCtx<'window> {
     // 获取GPU的逻辑设备、命令队列
     let (device, queue) = adapter.request_device(&DeviceDescriptor {
       label: None,
-      required_features: wgpu::Features::empty(),
+      required_features: wgpu::Features::POLYGON_MODE_LINE,
       required_limits: wgpu::Limits::default(),
       memory_hints: Default::default(),
     }, None).await.expect("Failed to create device");
@@ -90,15 +90,14 @@ impl<'window> WgpuCtx<'window> {
 
     // 创建相机
     let camera = Camera::new(
-      Vector3::new(0.0, 0.0, 5.0),
-      Vector3::new(0.0, 0.0, 0.0),
-      Vector3::new(0.0, 1.0, 0.0),
-      180.0,
-      surface_config.width as f32 / surface_config.height as f32,
-      0.0,
-      100.0,
+      Vector3::new(0.2, 0.5, 2.0), // 相机位置
+      Vector3::new(0.0, 0.0, 0.0), // 观察点
+      Vector3::new(0.0, 1.0, 0.0), // 相机朝上的方向
+      60.0_f32.to_radians(), // 相机的视野角度
+      surface_config.width as f32 / surface_config.height as f32, // 相机的宽高比
+      5.0, // 最近的可见距离
+      100.0, // 最远的可见距离
     );
-    println!("camera: {:?}", camera.uniform_obj());
     let vertex_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
       label: Some("uniform_buffer"),
       contents: bytemuck::cast_slice(&[camera.uniform_obj()]),
@@ -153,6 +152,7 @@ impl<'window> WgpuCtx<'window> {
           },
         })]
       });
+      // println!("r_pass: {:#?}", &self.bind_group.into());
       r_pass.set_pipeline(&self.render_pipeline);
       r_pass.set_bind_group(0, &self.bind_group, &[]);
       r_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

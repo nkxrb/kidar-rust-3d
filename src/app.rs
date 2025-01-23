@@ -21,7 +21,7 @@ impl<'window> ApplicationHandler for App<'window> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
       // 如果窗口未创建，则创建窗口
       if self.window.is_none() {
-        let win_attr = Window::default_attributes().with_title("kidar Engine").with_inner_size(LogicalSize::new(1280, 720));
+        let win_attr = Window::default_attributes().with_title("kidar Engine").with_inner_size(LogicalSize::new(800, 500));
         let window = Arc:: new(event_loop.create_window(win_attr).expect("Failed to create window"));
         // window.Some(wgpu_ctx);
         let wgpu_ctx = WgpuCtx::new(window.clone());
@@ -54,7 +54,7 @@ impl<'window> ApplicationHandler for App<'window> {
           if state == winit::event::ElementState::Pressed && button == winit::event::MouseButton::Left {
             println!("Mouse input {:#?}", self.mouse_pos);
             if let Some(wgpu_ctx) = self.wgpu_ctx.as_mut() {
-              wgpu_ctx.update_gpu_buffer(self.mouse_pos);
+              // wgpu_ctx.update_gpu_buffer(self.mouse_pos);
             } 
           }
         },

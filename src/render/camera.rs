@@ -6,6 +6,7 @@ use wgpu::*;
 pub struct CameraUniform {
   proj: Matrix4<f32>,
   view: Matrix4<f32>,
+  model: Matrix4<f32>,
 }
 
 unsafe impl bytemuck::Zeroable for CameraUniform {}
@@ -16,19 +17,21 @@ pub struct Camera {
   target: Vector3<f32>, // 相机目标
   up: Vector3<f32>, // 相机上方向
   fov: f32, // 视场角，横向广角
-  aspect: f32, // 宽高比
+  screen_width: f32, // 屏幕宽度
+  screen_height: f32, // 屏幕高度
   near: f32, // 近裁剪面
   far: f32, // 远裁剪面
 }
 
 impl Camera {
-  pub fn new(position: Vector3<f32>, target: Vector3<f32>, up: Vector3<f32>, fov: f32, aspect: f32, near: f32, far: f32) -> Self {
+  pub fn new(position: Vector3<f32>, target: Vector3<f32>, up: Vector3<f32>, fov: f32, screen_width: f32, screen_height: f32, near: f32, far: f32) -> Self {
     Self {
       position,
       target,
       up,
       fov,
-      aspect,
+      screen_width,
+      screen_height,
       near,
       far,
     }
@@ -37,8 +40,12 @@ impl Camera {
   
   pub fn model_matrix(&self) -> Matrix4<f32> {
     // 通过相机位置，将世界坐标通过模型矩阵转化为局部坐标
-    Matrix4::identity()
-
+    Matrix4::new(
+      2.0/self.screen_width, 0.0, 0.0, 0.0,
+      0.0, -2.0/self.screen_height, 0.0, 0.0,
+      0.0, 0.0, 0.001, 0.0,
+      0.0, 0.0, 0.0, 1.0,
+    )
   }
 
   // 通过相机获取视图矩阵
@@ -56,7 +63,7 @@ impl Camera {
     // let z_axis = (self.target - self.position).normalize();
     // let x_axis = self.up.cross(&z_axis).normalize();
     // let y_axis = z_axis.cross(&x_axis);
-    // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
+    // // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
     // let t_rotate = Matrix4::new(
     //   x_axis.x, x_axis.y, x_axis.z, 0.0,
     //   y_axis.x, y_axis.y, y_axis.z, 0.0,
@@ -66,6 +73,7 @@ impl Camera {
     // // 第三步，将相机的朝向转换为世界坐标
     // let t_view = t_rotate * t_view;
     // t_view
+    // t_rotate
   }
 
   // 通过相机获取投影矩阵
@@ -91,14 +99,17 @@ impl Camera {
     // let z_range = self.far - self.near;
     // let z_scale = 1.0 / (self.far - self.near);
     // let z_offset = -(self.far * self.near) / z_range;
+    // let n = self.near;
+    // let f = self.far;
     // let projection = Matrix4::new(
-    //   f / aspect, 0.0, 0.0, 0.0,
-    //   0.0, f, 0.0, 0.0,
-    //   0.0, 0.0, z_scale, -1.0,
-    //   0.0, 0.0, z_offset, 0.0,
+    //   n, 0.0, 0.0, 0.0,
+    //   0.0, n, 0.0, 0.0,
+    //   0.0, 0.0, n+f, -n*f,
+    //   0.0, 0.0, 1.0, 0.0,
     // );
     // projection
-    Matrix4::new_perspective(self.aspect, self.fov, self.near, self.far)
+    let aspect = self.screen_width / self.screen_height;
+    Matrix4::new_perspective(aspect, self.fov, self.near, self.far)
     // Projective3::new()
   } 
 
@@ -106,6 +117,7 @@ impl Camera {
     let camera_uniform = CameraUniform {
       proj: self.projection_matrix(),
       view: self.view_matrix(),
+      model: self.model_matrix(),
       // proj: [
       //   [1.0, 0.0, 0.0, 0.0],
       //   [0.0, 1.0, 0.0, 0.0],
@@ -119,6 +131,10 @@ impl Camera {
     };
     println!("Camera::uniform_obj: {:?}", &camera_uniform);
     camera_uniform
+  }
+
+  pub fn set_target(&mut self, target: Vector3<f32>) {
+    self.target = target;
   }
 
   pub fn bind_group(&self, device: &Device, bind_group_layout: &BindGroupLayout, uniform_buffer: &Buffer) -> BindGroup {

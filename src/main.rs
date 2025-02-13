@@ -3,6 +3,8 @@ use winit::event_loop::EventLoop;
 
 mod render;
 mod app;
+mod element;
+mod views;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();

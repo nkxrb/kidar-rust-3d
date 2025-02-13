@@ -3,6 +3,7 @@
 pub struct Vertex {
   pub position: [f32; 3],
   pub color: [f32; 3],
+  // tex_coords非必填
   pub tex_coords: [f32; 2],
 }
 
@@ -11,60 +12,60 @@ unsafe impl bytemuck::Pod for Vertex {}
 
 pub const VERTEX_LIST: &[Vertex] = &[
   Vertex {
-    position: [-0.5, 0.5, -0.1],
+    position: [200.0, 200.0, 5.0],
     color: [0.5, 0.0, 0.0],
     tex_coords: [0.4131759, 0.00759614],
   },
   Vertex {
-    position: [-0.5, -0.5, -0.1],
+    position: [200.0, 400.0, 5.0],
     color: [0.0, 0.5, 0.0],
     tex_coords: [0.0048659444, 0.43041354],
   },
   Vertex {
-    position: [0.5, -0.5, -0.1],
+    position: [400.0, 200.0, 5.0],
     color: [0.5, 0.0, 0.5],
     tex_coords: [0.28081453, 0.949397],
   },
   Vertex {
-    position: [0.5, 0.5, -0.1],
+    position: [400.0, 400.0, 5.0],
     color: [0.0, 0.5, 0.5],
     tex_coords: [0.28081453, 0.949397],
   },
   Vertex {
-    position: [-0.5, 0.5, 0.5],
+    position: [200.0, 200.0, 200.0],
     color: [0.5, 0.0, 0.0],
     tex_coords: [0.4131759, 0.00759614],
   },
   Vertex {
-    position: [-0.5, -0.5, 0.5],
+    position: [200.0, 400.0, 200.0],
     color: [0.0, 0.5, 0.0],
     tex_coords: [0.0048659444, 0.43041354],
   },
   Vertex {
-    position: [0.5, -0.5, 0.5],
+    position: [400.0, 200.0, 200.0],
     color: [0.5, 0.0, 0.5],
     tex_coords: [0.28081453, 0.949397],
   },
   Vertex {
-    position: [0.5, 0.5, 0.5],
+    position: [400.0, 400.0, 200.0],
     color: [0.0, 0.5, 0.5],
     tex_coords: [0.28081453, 0.949397],
-  }
+  },
 ];
 
 pub const VERTEX_INDEX_LIST: &[u16] = &[
-  0,1,2,
-  0,2,3,
-  3,2,6,
-  3,6,7,
-  7,6,5,
-  7,5,4,
-  4,5,1,
-  4,1,0,
-  4,0,3,
-  4,3,7,
-  1,5,6,
-  1,6,2,
+  0,1,2, 
+  2,1,3,
+  3,7,2,
+  2,7,6,
+  6,7,5,
+  5,4,6,
+  6,2,0,
+  0,6,4,
+  4,5,0,
+  0,5,1,
+  1,5,7,
+  7,3,1,
 ];
 
 pub const VERTEX_INDEX_LIST2: &[u16] = &[

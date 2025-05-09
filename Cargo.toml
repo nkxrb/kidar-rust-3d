@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 winit = "^0.30.0"
-wgpu = "^23.0.1"          # GPU 渲染 API
+wgpu = "^25.0.0"          # GPU 渲染 API
 nalgebra = "^0.32"      # 数学库（矩阵和向量）
 pollster = "0.4.0"
 bytemuck = "1.21.0"

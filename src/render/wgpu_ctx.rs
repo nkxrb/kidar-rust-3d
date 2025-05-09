@@ -7,27 +7,29 @@ use wgpu::*;
 
 use crate::render::{camera::Camera, pipeline::create_pipeline, vertex::*};
 
+use super::camera::CameraMove;
+
 pub struct WgpuCtx<'window> {
-  vw: u32, // 屏幕高度
-  vh: u32, // 屏幕宽度
-  surface: Surface<'window>,
-  device: Device,
-  queue: Queue,
-  surface_config: SurfaceConfiguration,
-  adapter: Adapter,
-  render_pipeline: RenderPipeline,
-  vertex_buffer: Buffer,
-  vertex_index_buffer: Buffer,
-  vertex_uniform_buffer: Buffer,
-  bind_group: BindGroup,
-  camera: Camera,
+  pub vw: u32, // 屏幕高度
+  pub vh: u32, // 屏幕宽度
+  pub surface: Surface<'window>,
+  pub device: Device,
+  pub queue: Queue,
+  pub surface_config: SurfaceConfiguration,
+  pub adapter: Adapter,
+  pub render_pipeline: RenderPipeline,
+  pub vertex_buffer: Buffer,
+  pub vertex_index_buffer: Buffer,
+  pub vertex_uniform_buffer: Buffer,
+  pub bind_group: BindGroup,
+  pub camera: Camera,
+  pub vertex_len: u32
 }
 
 impl<'window> WgpuCtx<'window> {
 
   pub async fn new_async(window: Arc<Window>) -> Self {
     // 构建wgpu上下文
-    println!("WgpuCtx::new");
     // 创建一个wgpu实例
     let instance = wgpu::Instance::default();
     // 初始化一个画布表面
@@ -42,10 +44,11 @@ impl<'window> WgpuCtx<'window> {
     // 获取GPU的逻辑设备、命令队列
     let (device, queue) = adapter.request_device(&DeviceDescriptor {
       label: None,
+      trace: Trace::Off,
       required_features: wgpu::Features::POLYGON_MODE_LINE,
       required_limits: wgpu::Limits::default(),
       memory_hints: Default::default(),
-    }, None).await.expect("Failed to create device");
+    }).await.expect("Failed to create device");
 
     let window_size = window.inner_size();
     let width = window_size.width;
@@ -93,8 +96,8 @@ impl<'window> WgpuCtx<'window> {
     let screen_height = surface_config.height as f32;
     // 创建相机
     let camera = Camera::new(
-      Vector3::new(screen_width/2.0, screen_height/2.0, 2.0), // 相机位置
-      Vector3::new(screen_width/2.0, screen_height/2.0, 0.0), // 观察点
+      Vector3::new(5100.0, 2200.0, 2200.0), // 相机位置
+      Vector3::new(5100.0, 2200.0, 0.0), // 观察点
       Vector3::new(0.0, 1.0, 0.0), // 相机朝上的方向
       45.0_f32.to_radians(), // 相机的视野角度
       screen_width, // 屏幕宽度
@@ -124,7 +127,8 @@ impl<'window> WgpuCtx<'window> {
         vertex_index_buffer,
         vertex_uniform_buffer,
         bind_group,
-        camera
+        camera,
+        vertex_len: 0
       };
   }
 
@@ -160,6 +164,8 @@ impl<'window> WgpuCtx<'window> {
       // println!("r_pass: {:#?}", &self.bind_group.into());
       r_pass.set_pipeline(&self.render_pipeline);
       r_pass.set_bind_group(0, &self.bind_group, &[]);
+      r_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+      r_pass.draw(0..self.vertex_len, 0..1);
       // r_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
       // r_pass.set_index_buffer(self.vertex_index_buffer.slice(..), IndexFormat::Uint16);
       // r_pass.draw_indexed(0..VERTEX_INDEX_LIST.len() as u32, 0, 0..1);
@@ -171,47 +177,37 @@ impl<'window> WgpuCtx<'window> {
     frame.present(); // 替换当前帧画面，显示最新的图像
   }
 
-  pub fn draw_ver(&mut self, vertex_list: Vec<Vertex>) {
-
-    self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertex_list));
-
-    let frame = self.surface.get_current_texture().unwrap();
-    // 设置纹理
-    let view = frame.texture.create_view(&TextureViewDescriptor::default());
-    // println!("WgpuCtx::draw: {:?}", view);
-    let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
-
-    // 此处使用作用域，将pass限制在一定范围内，出作用域后会自动调用drop清理资源。
-    {
-      let mut r_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-        label: None,
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        color_attachments: &[Some(RenderPassColorAttachment {
-          view: &view,
-          resolve_target: None,
-          ops: Operations {
-            load: LoadOp::Clear(Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
-            store: StoreOp::Store,
-          },
-        })]
-      });
-      // println!("r_pass: {:#?}", &self.bind_group.into());
-      r_pass.set_pipeline(&self.render_pipeline);
-      r_pass.set_bind_group(0, &self.bind_group, &[]);
-      r_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-      r_pass.draw(0..vertex_list.len() as u32, 0..1);
-    }
-
-    // 上面的pass结束后，才能调用finish
-    self.queue.submit(Some(encoder.finish())); // 提交命令到GPU
-    frame.present(); // 替换当前帧画面，显示最新的图像
-  }
-
   pub fn update_gpu_buffer(&mut self, mouse_pos: (f64, f64)) {
     // 小数据更新，直接更新的是GPU内部的buffer
-    self.camera.set_target(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 0.0));
+    self.camera.set_position(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 2.0));
+    self.queue.write_buffer(&self.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera.uniform_obj()]));
+    self.draw();
+  } 
+
+  pub fn move_camera_buffer(&mut self, move_direction: CameraMove) {
+    // 小数据更新，直接更新的是GPU内部的buffer
+    match move_direction {
+      CameraMove::Forward => {
+        self.camera.move_forward(10.0);
+      },
+      CameraMove::Backward => {
+        self.camera.move_backward(10.0);
+      },
+      CameraMove::Left => {
+        self.camera.move_left(10.0);
+      },
+      CameraMove::Right => {
+        self.camera.move_right(10.0);
+      }
+      CameraMove::Up => {
+        self.camera.look_up(10.0);
+      },
+      CameraMove::Down => {
+        self.camera.look_down(10.0);
+      },
+      CameraMove::None => todo!(),
+    }
+    // self.camera.set_position(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 2.0));
     self.queue.write_buffer(&self.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera.uniform_obj()]));
     self.draw();
   } 

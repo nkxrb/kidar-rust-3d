@@ -1,5 +1,7 @@
-use nalgebra::{Matrix4, Point3, Vector3};
+use nalgebra::{Matrix4, Point3, Unit, UnitQuaternion, Vector3};
 use wgpu::*;
+
+use crate::calc::angle::adjust_camera_pitch;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -11,6 +13,16 @@ pub struct CameraUniform {
 
 unsafe impl bytemuck::Zeroable for CameraUniform {}
 unsafe impl bytemuck::Pod for CameraUniform {}
+
+pub enum CameraMove {
+  Forward,
+  Backward,
+  Left,
+  Right,
+  Up,
+  Down,
+  None,  
+}
 
 pub struct Camera {
   position: Vector3<f32>, // 相机位置
@@ -37,13 +49,42 @@ impl Camera {
     }
   }
 
+  // 将世界坐标转为相机坐标的变化矩阵
+  pub fn world_to_camera(&self) -> Matrix4<f32> {
+    let camera_pos = self.position;
+    // 先转化为基于相机位置的局部屏幕坐标
+    let relate_pos = Matrix4::new(
+      1.0, 0.0, 0.0, -camera_pos.x,
+      0.0, 1.0, 0.0, -camera_pos.y,
+      0.0, 0.0, 1.0, -camera_pos.z,
+      0.0, 0.0, 0.0, 1.0,
+    );
+
+    let camera_target = self.target;
+    let camera_up = self.up;
+    let z_axis = (camera_target - camera_pos).normalize();
+    let x_axis = camera_up.cross(&z_axis).normalize();
+    let y_axis = z_axis.cross(&x_axis);
+    let camera_matrix = Matrix4::new(
+      x_axis.x, x_axis.y, x_axis.z, 0.0,
+      y_axis.x, y_axis.y, y_axis.z, 0.0,
+      z_axis.x, z_axis.y, z_axis.z, 0.0,
+      0.0, 0.0, 0.0, 1.0,
+    );
+
+    relate_pos
+  }
+
   
   pub fn model_matrix(&self) -> Matrix4<f32> {
     // 通过相机位置，将世界坐标通过模型矩阵转化为局部坐标
+    let w = 2.0/self.screen_width;
+    let h = 2.0/self.screen_height;
+    let d = 0.001;
     Matrix4::new(
-      2.0/self.screen_width, 0.0, 0.0, 0.0,
-      0.0, -2.0/self.screen_height, 0.0, 0.0,
-      0.0, 0.0, 0.001, 0.0,
+      w, 0.0, 0.0, -self.position.x*w,
+      0.0, h, 0.0, -self.position.y*h,
+      0.0, 0.0, d, -self.position.z*d,
       0.0, 0.0, 0.0, 1.0,
     )
   }
@@ -130,11 +171,61 @@ impl Camera {
       //   [0.0, 0.0, 0.0, 1.0]].into(),
     };
     println!("Camera::uniform_obj: {:?}", &camera_uniform);
+    // 矩阵点乘
     camera_uniform
   }
 
   pub fn set_target(&mut self, target: Vector3<f32>) {
     self.target = target;
+  }
+  pub fn set_position(&mut self, position: Vector3<f32>) {
+    self.position = position;
+  }
+
+  // 向前移动
+  pub fn move_forward(&mut self, distance: f32) {
+    let forward = (self.target - self.position).normalize();
+    self.position += forward * distance;
+    self.target += forward * distance;
+  }
+  // 向后移动
+  pub fn move_backward(&mut self, distance: f32) {
+    let backward = (self.position - self.target).normalize();
+    self.position += backward * distance;
+    self.target += backward * distance;
+  }
+  // 向左移动
+  pub fn move_left(&mut self, distance: f32) {
+    let left = self.up.cross(&(self.target - self.position)).normalize();
+    self.position += left * distance;
+  }
+  // 向右移动
+  pub fn move_right(&mut self, distance: f32) {
+    let right = (self.target - self.position).cross(&self.up).normalize();
+    self.position += right * distance;
+  }
+
+  // 抬头
+  pub fn look_up(&mut self, angle: f32) {
+    let z_axis = (self.target - self.position).normalize();
+    let x_axis = self.up.cross(&z_axis).normalize();
+    let y_axis = z_axis.cross(&x_axis);
+    self.target = adjust_camera_pitch(self.position, self.target, self.up, angle);
+
+  }
+  // 低头
+  pub fn look_down(&mut self, angle: f32) {
+    self.target = adjust_camera_pitch(self.position, self.target, self.up, -angle);
+  }
+
+  // 向上移动
+  pub fn move_up(&mut self, distance: f32) {
+    self.position += self.up * distance;
+  }
+
+  // 向下移动
+  pub fn move_down(&mut self, distance: f32) {
+    self.position -= self.up * distance;
   }
 
   pub fn bind_group(&self, device: &Device, bind_group_layout: &BindGroupLayout, uniform_buffer: &Buffer) -> BindGroup {

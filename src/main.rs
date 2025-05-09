@@ -5,6 +5,7 @@ mod render;
 mod app;
 mod element;
 mod views;
+mod calc;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();

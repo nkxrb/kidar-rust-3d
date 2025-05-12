@@ -33,10 +33,10 @@ pub fn create_pipeline(device: &Device, texture_format: TextureFormat, bind_grou
     primitive: PrimitiveState {
       topology: PrimitiveTopology::TriangleList,
       strip_index_format: None,
-      front_face: FrontFace::Ccw, // Ccw:逆时针顶点顺序为正面（默认）, Cw:顺时针顶点顺序为正面
+      front_face: FrontFace::Cw, // Ccw:逆时针顶点顺序为正面（默认）, Cw:顺时针顶点顺序为正面
       cull_mode: Some(Face::Back), // 背面剔除,
       unclipped_depth: false, // 是否禁用近/远平面的深度裁剪, 默认false（启用裁剪）
-      polygon_mode: PolygonMode::Line, // 设置为线框模式， 片源着色器绘制类型
+      polygon_mode: PolygonMode::Fill, // 设置为线框模式， 片源着色器绘制类型
       conservative: false, // 是否启用保守光栅化
     },
     depth_stencil: None,

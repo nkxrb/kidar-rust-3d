@@ -10,6 +10,7 @@ use winit::window::WindowId;
 use winit::window::Window;
 use crate::render::camera::CameraMove;
 use crate::render::draw::draw_ver;
+use crate::render::draw::update_camera;
 use crate::render::wgpu_ctx::*;
 use crate::views::home::draw_home;
 
@@ -47,8 +48,11 @@ impl<'window> ApplicationHandler for App<'window> {
           // 处理窗口重绘
           if let Some(wgpu_ctx) = self.wgpu_ctx.as_mut() {
             let size = self.window.as_ref().unwrap().inner_size();
+            wgpu_ctx.camera.set_screen_size(size.width as f32, size.height as f32);
+            update_camera(wgpu_ctx);
             // wgpu_ctx.draw();
             let vertex_list = draw_home();
+            println!("RedrawRequested");
             draw_ver(wgpu_ctx, vertex_list);
           }
         },

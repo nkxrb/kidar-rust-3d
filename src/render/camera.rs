@@ -1,8 +1,6 @@
 use nalgebra::{Matrix4, Point3, Unit, UnitQuaternion, Vector3};
 use wgpu::*;
 
-use crate::calc::angle::adjust_camera_pitch;
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct CameraUniform {
@@ -87,11 +85,18 @@ impl Camera {
       0.0, 0.0, d, -self.position.z*d,
       0.0, 0.0, 0.0, 1.0,
     )
+
+    // return  Matrix4::new(
+    //   w, 0.0, 0.0, 0.0,
+    //   0.0, h, 0.0, 0.0,
+    //   0.0, 0.0, d, 0.0,
+    //   0.0, 0.0, 0.0, 1.0,
+    // );
   }
 
   // 通过相机获取视图矩阵
   pub fn view_matrix(&self) -> Matrix4<f32> {
-    Matrix4::look_at_rh(&Point3::from(self.position), &Point3::from(self.target), &self.up)
+    // Matrix4::look_at_rh(&Point3::from(self.position), &Point3::from(self.target), &self.up)
     // 手动实现一下view矩阵的推导
     // 第一步，将相机移动到原点（0,0,0）
     // let t_view = Matrix4::new(
@@ -100,21 +105,20 @@ impl Camera {
     //   0.0, 0.0, 1.0, -self.position.z,
     //   0.0, 0.0, 0.0, 1.0,
     // );
-    // // 第二步，将相机的目标方向转换为相机的朝向
-    // let z_axis = (self.target - self.position).normalize();
-    // let x_axis = self.up.cross(&z_axis).normalize();
-    // let y_axis = z_axis.cross(&x_axis);
-    // // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
-    // let t_rotate = Matrix4::new(
-    //   x_axis.x, x_axis.y, x_axis.z, 0.0,
-    //   y_axis.x, y_axis.y, y_axis.z, 0.0,
-    //   z_axis.x, z_axis.y, z_axis.z, 0.0,
-    //   0.0, 0.0, 0.0, 1.0,
-    // );
-    // // 第三步，将相机的朝向转换为世界坐标
-    // let t_view = t_rotate * t_view;
-    // t_view
-    // t_rotate
+    // 第二步，将相机的目标方向转换为相机的朝向
+    let z_axis = (self.target - self.position).normalize();
+    let x_axis = self.up.cross(&z_axis).normalize();
+    let y_axis = z_axis.cross(&x_axis);
+    // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
+    let t_rotate = Matrix4::new(
+      x_axis.x, x_axis.y, x_axis.z, 0.0,
+      y_axis.x, y_axis.y, y_axis.z, 0.0,
+      -z_axis.x, -z_axis.y, -z_axis.z, 0.0,
+      0.0, 0.0, 0.0, 1.0,
+    );
+    // 第三步，将相机的朝向转换为世界坐标
+    // t_rotate * t_view
+    t_rotate
   }
 
   // 通过相机获取投影矩阵
@@ -149,8 +153,8 @@ impl Camera {
     //   0.0, 0.0, 1.0, 0.0,
     // );
     // projection
-    let aspect = self.screen_width / self.screen_height;
-    Matrix4::new_perspective(aspect, self.fov, self.near, self.far)
+    let aspect = self.screen_height / self.screen_width;
+    Matrix4::new_perspective(1.0, self.fov, self.near, self.far)
     // Projective3::new()
   } 
 
@@ -170,9 +174,14 @@ impl Camera {
       //   [0.0, 0.0, 1.0, 0.0],
       //   [0.0, 0.0, 0.0, 1.0]].into(),
     };
-    println!("Camera::uniform_obj: {:?}", &camera_uniform);
+    // println!("Camera::uniform_obj: {:?}", &camera_uniform);
     // 矩阵点乘
     camera_uniform
+  }
+
+  pub fn set_screen_size(&mut self, screen_width: f32, screen_height: f32) {
+    self.screen_width = screen_width;
+    self.screen_height = screen_height;
   }
 
   pub fn set_target(&mut self, target: Vector3<f32>) {
@@ -198,24 +207,29 @@ impl Camera {
   pub fn move_left(&mut self, distance: f32) {
     let left = self.up.cross(&(self.target - self.position)).normalize();
     self.position += left * distance;
+    self.target += left * distance;
   }
   // 向右移动
   pub fn move_right(&mut self, distance: f32) {
     let right = (self.target - self.position).cross(&self.up).normalize();
     self.position += right * distance;
+    self.target += right * distance;
   }
 
   // 抬头
   pub fn look_up(&mut self, angle: f32) {
     let z_axis = (self.target - self.position).normalize();
     let x_axis = self.up.cross(&z_axis).normalize();
-    let y_axis = z_axis.cross(&x_axis);
-    self.target = adjust_camera_pitch(self.position, self.target, self.up, angle);
-
+    // 使用四元数旋转
+    let rotation = UnitQuaternion::from_axis_angle(&Unit::new_normalize(x_axis), angle.to_radians());
+    let new_z_axis = rotation * (self.target - self.position);
+    self.target = self.position + new_z_axis;
+    println!("rotation: {:?}, tar: {:?}", &rotation, &self.target);
+    self.up = (self.target - self.position).normalize().cross(&x_axis);
   }
   // 低头
   pub fn look_down(&mut self, angle: f32) {
-    self.target = adjust_camera_pitch(self.position, self.target, self.up, -angle);
+    self.look_up(-angle);
   }
 
   // 向上移动

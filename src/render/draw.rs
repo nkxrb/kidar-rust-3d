@@ -1,6 +1,6 @@
 use wgpu::*;
 
-use super::{vertex::Vertex, wgpu_ctx::WgpuCtx};
+use super::{camera::Camera, vertex::Vertex, wgpu_ctx::WgpuCtx};
 
 pub fn draw_ver(ctx: &mut WgpuCtx, vertex_list: Vec<Vertex>) {
   ctx.queue.write_buffer(&ctx.vertex_buffer, 0, bytemuck::cast_slice(&vertex_list));
@@ -38,4 +38,8 @@ pub fn draw_ver(ctx: &mut WgpuCtx, vertex_list: Vec<Vertex>) {
   // 上面的pass结束后，才能调用finish
   ctx.queue.submit(Some(encoder.finish())); // 提交命令到GPU
   frame.present(); // 替换当前帧画面，显示最新的图像
+}
+
+pub fn update_camera(ctx: &mut WgpuCtx) {
+  ctx.queue.write_buffer(&ctx.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[ctx.camera.uniform_obj()]));
 }

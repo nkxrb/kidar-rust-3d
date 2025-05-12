@@ -92,12 +92,12 @@ impl<'window> WgpuCtx<'window> {
       usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
     });
 
-    let screen_width = surface_config.width as f32;
-    let screen_height = surface_config.height as f32;
+    let screen_width = window_size.width as f32;
+    let screen_height = window_size.height as f32;
     // 创建相机
     let camera = Camera::new(
-      Vector3::new(5100.0, 2200.0, 2200.0), // 相机位置
-      Vector3::new(5100.0, 2200.0, 0.0), // 观察点
+      Vector3::new(5100.0, 2200.0, 0.0), // 相机位置
+      Vector3::new(5100.0, 2200.0, 2200.0), // 观察点
       Vector3::new(0.0, 1.0, 0.0), // 相机朝上的方向
       45.0_f32.to_radians(), // 相机的视野角度
       screen_width, // 屏幕宽度
@@ -205,7 +205,9 @@ impl<'window> WgpuCtx<'window> {
       CameraMove::Down => {
         self.camera.look_down(10.0);
       },
-      CameraMove::None => todo!(),
+      CameraMove::None => {
+        return;
+      },
     }
     // self.camera.set_position(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 2.0));
     self.queue.write_buffer(&self.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera.uniform_obj()]));

@@ -1,3 +1,5 @@
+use std::f32::consts::{FRAC_PI_2, PI};
+
 use nalgebra::{Matrix4, Point3, Unit, UnitQuaternion, Vector3};
 use wgpu::*;
 
@@ -23,6 +25,7 @@ pub enum CameraMove {
 }
 
 pub struct Camera {
+  active_status: bool, // 相机是否激活
   position: Vector3<f32>, // 相机位置
   target: Vector3<f32>, // 相机目标
   up: Vector3<f32>, // 相机上方向
@@ -31,11 +34,23 @@ pub struct Camera {
   screen_height: f32, // 屏幕高度
   near: f32, // 近裁剪面
   far: f32, // 远裁剪面
+  sensitivity: f32, // 鼠标灵敏度
+  forward: Vector3<f32>,
+  yaw: f32, // 偏航角
+  pitch: f32, // 俯仰角
+  speed: f32, // 相机移动速度
+  pub is_forward: bool, // 是否向前移动
+  pub is_backward: bool,
+  pub is_left: bool,
+  pub is_right: bool,
+  pub is_up: bool,
+  pub is_down: bool,
 }
 
 impl Camera {
-  pub fn new(position: Vector3<f32>, target: Vector3<f32>, up: Vector3<f32>, fov: f32, screen_width: f32, screen_height: f32, near: f32, far: f32) -> Self {
+  pub fn new(position: Vector3<f32>, target: Vector3<f32>, up: Vector3<f32>, fov: f32, screen_width: f32, screen_height: f32, near: f32, far: f32, sensitivity: f32) -> Self {
     Self {
+      active_status: false,
       position,
       target,
       up,
@@ -44,139 +59,81 @@ impl Camera {
       screen_height,
       near,
       far,
+      sensitivity,
+      forward: (target - position).normalize(),
+      yaw: 0.0,
+      pitch: 0.0,
+      speed: 5.0,
+      is_forward: false,
+      is_backward: false,
+      is_left: false,
+      is_right: false,
+      is_up: false,
+      is_down: false,
     }
   }
-
-  // 将世界坐标转为相机坐标的变化矩阵
-  pub fn world_to_camera(&self) -> Matrix4<f32> {
-    let camera_pos = self.position;
-    // 先转化为基于相机位置的局部屏幕坐标
-    let relate_pos = Matrix4::new(
-      1.0, 0.0, 0.0, -camera_pos.x,
-      0.0, 1.0, 0.0, -camera_pos.y,
-      0.0, 0.0, 1.0, -camera_pos.z,
-      0.0, 0.0, 0.0, 1.0,
-    );
-
-    let camera_target = self.target;
-    let camera_up = self.up;
-    let z_axis = (camera_target - camera_pos).normalize();
-    let x_axis = camera_up.cross(&z_axis).normalize();
-    let y_axis = z_axis.cross(&x_axis);
-    let camera_matrix = Matrix4::new(
-      x_axis.x, x_axis.y, x_axis.z, 0.0,
-      y_axis.x, y_axis.y, y_axis.z, 0.0,
-      z_axis.x, z_axis.y, z_axis.z, 0.0,
-      0.0, 0.0, 0.0, 1.0,
-    );
-
-    relate_pos
-  }
-
   
   pub fn model_matrix(&self) -> Matrix4<f32> {
     // 通过相机位置，将世界坐标通过模型矩阵转化为局部坐标
     let w = 2.0/self.screen_width;
     let h = 2.0/self.screen_height;
-    let d = 0.001;
+    let d = 0.001; // 场景最大裁剪厚度是1000
     Matrix4::new(
       w, 0.0, 0.0, -self.position.x*w,
       0.0, h, 0.0, -self.position.y*h,
       0.0, 0.0, d, -self.position.z*d,
       0.0, 0.0, 0.0, 1.0,
     )
-
-    // return  Matrix4::new(
-    //   w, 0.0, 0.0, 0.0,
-    //   0.0, h, 0.0, 0.0,
-    //   0.0, 0.0, d, 0.0,
-    //   0.0, 0.0, 0.0, 1.0,
-    // );
   }
 
   // 通过相机获取视图矩阵
   pub fn view_matrix(&self) -> Matrix4<f32> {
-    // Matrix4::look_at_rh(&Point3::from(self.position), &Point3::from(self.target), &self.up)
-    // 手动实现一下view矩阵的推导
-    // 第一步，将相机移动到原点（0,0,0）
-    // let t_view = Matrix4::new(
-    //   1.0, 0.0, 0.0, -self.position.x,
-    //   0.0, 1.0, 0.0, -self.position.y,
-    //   0.0, 0.0, 1.0, -self.position.z,
-    //   0.0, 0.0, 0.0, 1.0,
-    // );
-    // 第二步，将相机的目标方向转换为相机的朝向
-    let z_axis = (self.target - self.position).normalize();
+    let z_axis = self.target;
     let x_axis = self.up.cross(&z_axis).normalize();
     let y_axis = z_axis.cross(&x_axis);
-    // println!("Camera::view_matrix: {:?}, up: {:?}", &z_axis, &x_axis);
     let t_rotate = Matrix4::new(
       x_axis.x, x_axis.y, x_axis.z, 0.0,
       y_axis.x, y_axis.y, y_axis.z, 0.0,
       -z_axis.x, -z_axis.y, -z_axis.z, 0.0,
       0.0, 0.0, 0.0, 1.0,
     );
-    // 第三步，将相机的朝向转换为世界坐标
-    // t_rotate * t_view
     t_rotate
   }
 
   // 通过相机获取投影矩阵
   pub fn projection_matrix(&self) -> Matrix4<f32> {
-    // 手动实现透视投影的矩阵推导
-    // 计算视锥体的宽度(因为坐标都是原点0为中心，左右对称的数据，因此这里只需要计算一半的宽度)
-    // let width = (self.fov * 0.5).tan() * self.near;
-    // println!("Camera::projection_matrix: width: {}", (self.fov * 0.5).tan());
-    // // 计算视锥体的高度
-    // let height = width / self.aspect;
-
-    // // 计算视锥体的投影矩阵
-    // let projection = Matrix4::new(
-    //   1.0 / width, 0.0, 0.0, 0.0,
-    //   0.0, 1.0 / height, 0.0, 0.0,
-    //   0.0, 0.0, -self.far / (self.far - self.near), -1.0,
-    //   0.0, 0.0, -(self.far * self.near) / (self.far - self.near), 0.0,
-    // );
-    // projection
-
-    // let f = 1.0 / (self.fov * 0.5).tan();
-    // let aspect = self.aspect;
-    // let z_range = self.far - self.near;
-    // let z_scale = 1.0 / (self.far - self.near);
-    // let z_offset = -(self.far * self.near) / z_range;
-    // let n = self.near;
-    // let f = self.far;
-    // let projection = Matrix4::new(
-    //   n, 0.0, 0.0, 0.0,
-    //   0.0, n, 0.0, 0.0,
-    //   0.0, 0.0, n+f, -n*f,
-    //   0.0, 0.0, 1.0, 0.0,
-    // );
-    // projection
-    let aspect = self.screen_height / self.screen_width;
+    // aspect固定为1.0，方便实现正方形图形渲染
+    // let aspect = self.screen_height / self.screen_width;
     Matrix4::new_perspective(1.0, self.fov, self.near, self.far)
-    // Projective3::new()
   } 
 
   pub fn uniform_obj(&self) -> CameraUniform  {
+    let proj = self.projection_matrix();
+    let view = self.view_matrix();
+    let model = self.model_matrix();
+    let pvm = proj * view * model;
+    // let pvm = Matrix4::new(
+    //   -0.0021650565, 0.0, 3.2413034e-6, 3.2348273e-6, 
+    //   0.0, 0.003849002, 0.0, 0.0, 
+    //   -4.4823087e-6,0.0, -0.0010019987, -0.0009999967, 
+    //   11.041788, -8.467804, -0.21673085, -0.01649762
+    // ).transpose();
+    // let pvm = Matrix4::new(
+    //   0.0021650416, 0.0, -5.6631075e-6, -5.6517924e-6, 0.0, 0.003849002, 0.0, 0.0, 7.831355e-6, 0.0, 0.0010019918, 0.0009999898, -11.041712, -8.467804, -0.17131835, 0.028824143
+    // ).transpose();
+
     let camera_uniform = CameraUniform {
-      proj: self.projection_matrix(),
-      view: self.view_matrix(),
-      model: self.model_matrix(),
-      // proj: [
-      //   [1.0, 0.0, 0.0, 0.0],
-      //   [0.0, 1.0, 0.0, 0.0],
-      //   [0.0, 0.0, 1.0, 0.0],
-      //   [0.0, 0.0, 0.0, 1.0]].into(),
-      // view: [
-      //   [1.0, 0.0, 0.0, 0.0],
-      //   [0.0, 1.0, 0.0, 0.0],
-      //   [0.0, 0.0, 1.0, 0.0],
-      //   [0.0, 0.0, 0.0, 1.0]].into(),
+      proj: pvm,
+      view: view,
+      model: model,
     };
+
     // println!("Camera::uniform_obj: {:?}", &camera_uniform);
+    // println!("Camera::pvm: {:?}", &pvm);
+    // println!("Camera::mvp: {:?}", &mvp);
     // 矩阵点乘
     camera_uniform
+
   }
 
   pub fn set_screen_size(&mut self, screen_width: f32, screen_height: f32) {
@@ -184,62 +141,55 @@ impl Camera {
     self.screen_height = screen_height;
   }
 
-  pub fn set_target(&mut self, target: Vector3<f32>) {
-    self.target = target;
-  }
-  pub fn set_position(&mut self, position: Vector3<f32>) {
-    self.position = position;
+  pub fn active_move(&mut self, status: bool) {
+    self.active_status = status;
   }
 
-  // 向前移动
-  pub fn move_forward(&mut self, distance: f32) {
-    let forward = (self.target - self.position).normalize();
-    self.position += forward * distance;
-    self.target += forward * distance;
-  }
-  // 向后移动
-  pub fn move_backward(&mut self, distance: f32) {
-    let backward = (self.position - self.target).normalize();
-    self.position += backward * distance;
-    self.target += backward * distance;
-  }
-  // 向左移动
-  pub fn move_left(&mut self, distance: f32) {
-    let left = self.up.cross(&(self.target - self.position)).normalize();
-    self.position += left * distance;
-    self.target += left * distance;
-  }
-  // 向右移动
-  pub fn move_right(&mut self, distance: f32) {
-    let right = (self.target - self.position).cross(&self.up).normalize();
-    self.position += right * distance;
-    self.target += right * distance;
+  pub fn update(&mut self, dt: f32) {
+    if !self.active_status { // 如果相机未激活，则不进行移动
+      return
+    }
+
+    let (yaw_sin, yaw_cos) = self.yaw.sin_cos();
+    // z轴正向为正前方
+    let forward = Vector3::new(
+      yaw_sin,
+      0.0,
+      yaw_cos
+    ).normalize();
+    let right = self.up.cross(&forward).normalize();
+
+    let forward_amount = if self.is_forward {1.0f32} else {0.0f32};
+    let backward_amount = if self.is_backward {1.0f32} else {0.0f32};
+    let left_amount = if self.is_left {1.0f32} else {0.0f32};
+    let right_amount = if self.is_right {1.0f32} else {0.0f32};
+    let up_amount = if self.is_up {1.0f32} else {0.0f32};
+    let down_amount = if self.is_down {1.0f32} else {0.0f32};
+
+    self.position += forward * (forward_amount - backward_amount) * self.speed;
+    self.position += right * (right_amount - left_amount) * self.speed;
+    self.position += self.up * (up_amount - down_amount) * self.speed;
+    // println!("Camera::update: {:?}， {:?}", &self.position, &self.yaw);
+    let (pitch_sin, pitch_cos) = self.pitch.sin_cos();
+
+    self.target = Vector3::new(
+      pitch_cos * yaw_sin,
+      pitch_sin, 
+      pitch_cos * yaw_cos, 
+    ).normalize();
+    // println!("Camera::update: {:?}， {:?}", &self.position, &self.target);
   }
 
-  // 抬头
-  pub fn look_up(&mut self, angle: f32) {
-    let z_axis = (self.target - self.position).normalize();
-    let x_axis = self.up.cross(&z_axis).normalize();
-    // 使用四元数旋转
-    let rotation = UnitQuaternion::from_axis_angle(&Unit::new_normalize(x_axis), angle.to_radians());
-    let new_z_axis = rotation * (self.target - self.position);
-    self.target = self.position + new_z_axis;
-    println!("rotation: {:?}, tar: {:?}", &rotation, &self.target);
-    self.up = (self.target - self.position).normalize().cross(&x_axis);
-  }
-  // 低头
-  pub fn look_down(&mut self, angle: f32) {
-    self.look_up(-angle);
-  }
-
-  // 向上移动
-  pub fn move_up(&mut self, distance: f32) {
-    self.position += self.up * distance;
-  }
-
-  // 向下移动
-  pub fn move_down(&mut self, distance: f32) {
-    self.position -= self.up * distance;
+  // 摄像头旋转
+  pub fn look_rotate(&mut self, mouse_pos: (f64, f64), dt: f32) {
+    if !self.active_status { // 如果相机未激活，则不进行旋转
+      return
+    }
+    self.yaw += (mouse_pos.0 as f32) * self.sensitivity * dt;
+    self.pitch += (mouse_pos.1 as f32) * self.sensitivity * dt;
+    self.pitch = self.pitch.clamp(-FRAC_PI_2 + 0.1, FRAC_PI_2 - 0.1);
+    // println!("Camera::look_rotate: {:?}, {:?}, {:?}", mouse_pos, &self.yaw, &self.pitch);
+    // println!("Camera::look_sincos: {:?}, {:?}, {:?}", mouse_pos, &self.yaw.sin_cos(), &self.pitch.sin_cos());
   }
 
   pub fn bind_group(&self, device: &Device, bind_group_layout: &BindGroupLayout, uniform_buffer: &Buffer) -> BindGroup {

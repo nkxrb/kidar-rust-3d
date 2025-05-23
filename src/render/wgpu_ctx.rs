@@ -7,7 +7,7 @@ use wgpu::*;
 
 use crate::render::{camera::Camera, pipeline::create_pipeline, vertex::*};
 
-use super::camera::CameraMove;
+use super::{camera::CameraMove, draw::create_depth_texture};
 
 pub struct WgpuCtx<'window> {
   pub vw: u32, // 屏幕高度
@@ -32,6 +32,7 @@ impl<'window> WgpuCtx<'window> {
     // 构建wgpu上下文
     // 创建一个wgpu实例
     let instance = wgpu::Instance::default();
+    
     // 初始化一个画布表面
     let surface = instance.create_surface(window.clone()).unwrap();
     // 获取适配器
@@ -97,13 +98,15 @@ impl<'window> WgpuCtx<'window> {
     // 创建相机
     let camera = Camera::new(
       Vector3::new(5100.0, 2200.0, 0.0), // 相机位置
-      Vector3::new(5100.0, 2200.0, 2200.0), // 观察点
+      // Vector3::new(5100.0, 2200.0, 1000.0), // 观察点
+      Vector3::new(0.0, 0.0, 1.0), // 观察点
       Vector3::new(0.0, 1.0, 0.0), // 相机朝上的方向
       45.0_f32.to_radians(), // 相机的视野角度
       screen_width, // 屏幕宽度
       screen_height, // 屏幕高度,
       0.1, // 最近的可见距离
       100.0, // 最远的可见距离
+      0.02 // 鼠标灵敏度
     );
     println!("screen_width: {}, screen_height: {}", screen_width, screen_height);
     let vertex_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -145,11 +148,20 @@ impl<'window> WgpuCtx<'window> {
     // println!("WgpuCtx::draw: {:?}", view);
     let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor { label: None });
 
+    let depth_view = create_depth_texture(self, "depth_texture").1;
+
     // 此处使用作用域，将pass限制在一定范围内，出作用域后会自动调用drop清理资源。
     {
       let mut r_pass = encoder.begin_render_pass(&RenderPassDescriptor {
         label: None,
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment { 
+          view: &depth_view,
+          depth_ops: Some(Operations {
+            load: LoadOp::Clear(1.0),
+            store: StoreOp::Store,
+          }),
+          stencil_ops: None,
+        }),
         timestamp_writes: None,
         occlusion_query_set: None,
         color_attachments: &[Some(RenderPassColorAttachment {
@@ -175,49 +187,6 @@ impl<'window> WgpuCtx<'window> {
     // 上面的pass结束后，才能调用finish
     self.queue.submit(Some(encoder.finish())); // 提交命令到GPU
     frame.present(); // 替换当前帧画面，显示最新的图像
-  }
-
-  pub fn update_gpu_buffer(&mut self, mouse_pos: (f64, f64)) {
-    // 小数据更新，直接更新的是GPU内部的buffer
-    self.camera.set_position(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 2.0));
-    self.queue.write_buffer(&self.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera.uniform_obj()]));
-    self.draw();
   } 
 
-  pub fn move_camera_buffer(&mut self, move_direction: CameraMove) {
-    // 小数据更新，直接更新的是GPU内部的buffer
-    match move_direction {
-      CameraMove::Forward => {
-        self.camera.move_forward(10.0);
-      },
-      CameraMove::Backward => {
-        self.camera.move_backward(10.0);
-      },
-      CameraMove::Left => {
-        self.camera.move_left(10.0);
-      },
-      CameraMove::Right => {
-        self.camera.move_right(10.0);
-      }
-      CameraMove::Up => {
-        self.camera.look_up(10.0);
-      },
-      CameraMove::Down => {
-        self.camera.look_down(10.0);
-      },
-      CameraMove::None => {
-        return;
-      },
-    }
-    // self.camera.set_position(Vector3::new(mouse_pos.0 as f32, mouse_pos.1 as f32, 2.0));
-    self.queue.write_buffer(&self.vertex_uniform_buffer, 0, bytemuck::cast_slice(&[self.camera.uniform_obj()]));
-    self.draw();
-  } 
-
-  pub fn update_uniform_buffer(&mut self, size: PhysicalSize<u32>) {
-    // 根据窗口大小，更新projection矩阵
-    // let projection = create_projection(self.vw, self.vh);
-  }
 }
-
-
